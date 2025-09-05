@@ -155,9 +155,8 @@ def export_to_sql(df, db_name="housing_affordability.db"):
     
     conn = sqlite3.connect(db_name)
     df.to_sql("housing_data", conn, if_exists="replace", index=False)
-    row_count = conn.execute("SELECT COUNT(*) FROM housing_data").fetchone()[0]
     conn.close()
-    print("Rows inserted into SQLite:", row_count)
+    
     print(f"✅ Exported DataFrame to SQLite database: {db_name}")
 
 # --- Regression Forecasting ---
