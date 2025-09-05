@@ -154,23 +154,32 @@ def export_to_sql(df, db_type="sqlite", db_name="housing_affordability.db"):
     print(f"✅ Exported to {db_type} database: {db_name}")
 
 # --- Regression Forecasting ---
-def prepare_zillow_timeseries(zillow_path):
+def prepare_zillow_timeseries(zillow_df, min_months=12):
     """
     Convert wide Zillow rent dataset to long format:
     ZIP | date | rent
     """
-    df = pd.read_csv(zillow_path)
+    date_cols = [c for c in zillow_df.columns if any(x in c for x in ["/", "-", "20"])]
 
-    id_vars = ["ZIP", "State", "City", "Metro", "CountyName"]
-    value_vars = df.columns[len(id_vars):]  # all date columns
+    long_df = zillow_df.melt(
+        id_vars = ["ZIP"], 
+        value_vars = date_cols,
+        var_name = "date", 
+        value_name = "rent"  
+    )
 
-    long_df = df.melt(id_vars=id_vars, value_vars=value_vars,
-                      var_name="date", value_name="rent")
-
-    # Convert to datetime
-    long_df["date"] = pd.to_datetime(long_df["date"], format="%d/%m/%Y")
+    long_df["date"] = pd.to_datetime(long_df["date"], errors="coerce")
+    long_df = long_df.dropna(subset=["date"]) 
     long_df["year"] = long_df["date"].dt.year
     long_df["month"] = long_df["date"].dt.month
+
+    # Require at least `min_months` valid rent observations
+    long_df = long_df.groupby("ZIP").filter(lambda g: g["rent"].notna().sum() >= min_months)
+
+    # Fill gaps
+    long_df["rent"] = long_df.groupby("ZIP")["rent"].transform(lambda s: s.ffill().bfill())
+
+    long_df = long_df.sort_values(["ZIP", "date"]).reset_index(drop=True)
 
     return long_df
 def run_forecast(df, years=5):
@@ -179,7 +188,6 @@ def run_forecast(df, years=5):
     """
     forecasts = []
     for zip_code, group in df.groupby("ZIP"):
-        group = group.dropna(subset=["rent"]).sort_values("date")
         if group.shape[0] < 24:  # require at least 2 years of data
             continue
 
@@ -224,7 +232,7 @@ def main():
     save_outputs(merged)
 
     print("Exporting to SQL...")
-    export_to_sql(merged, db_type="sqlite")  # or db_type="postgres"
+    export_to_sql(merged, db_type="sqlite") 
 
     print("Running regression forecasting...")
     run_forecast(zillow)
@@ -233,6 +241,5 @@ def main():
 
 if __name__ == "__main__":
     main()
-    zillow_path = os.path.join("raw_data", "zillow_rent.csv")
-    long_df = prepare_zillow_timeseries(zillow_path)
-    forecast_df = run_forecast(long_df, years=5)
+
+
