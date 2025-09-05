@@ -1,1 +1,2 @@
-d.to_datetime(long_df["date"], format="%d/%m/%Y")
+if __name__ == "__main__":
+    main()

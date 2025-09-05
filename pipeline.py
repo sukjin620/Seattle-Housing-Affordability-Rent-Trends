@@ -235,11 +235,10 @@ def main():
     export_to_sql(merged, db_type="sqlite") 
 
     print("Running regression forecasting...")
-    run_forecast(zillow)
+    zillow_long = prepare_zillow_timeseries(zillow)
+    run_forecast(zillow_long)
 
     print("🎉 Pipeline complete!")
 
 if __name__ == "__main__":
     main()
-
-
