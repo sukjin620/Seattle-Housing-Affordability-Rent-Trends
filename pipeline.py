@@ -231,6 +231,30 @@ def run_forecast(df, years=5):
 
     return forecast_df
 
+def calculate_annual_increase(df):
+    """
+    Estimate projected annual rent increase (%) using linear regression slopes.
+    """
+    increases = []
+
+    for zip_code, group in df.groupby("ZIP"):
+        if group.shape[0] < 24:  # require at least 2 years of data
+            continue
+
+        group = group.sort_values("date").reset_index(drop=True)
+        t = np.arange(len(group))
+        y = group["rent"].values
+
+        # Linear regression slope
+        slope = np.polyfit(t, y, 1)[0]  # monthly increase
+        avg_rent = y.mean()
+
+        # Annual percentage increase
+        annual_pct = (slope * 12) / avg_rent * 100
+        increases.append(annual_pct)
+
+    return increases
+
 # --- Main pipeline ---
 def main():
     print("Loading raw datasets...")
@@ -252,6 +276,9 @@ def main():
     run_forecast(zillow_long)
 
     print("🎉 Pipeline complete!")
+
+    annual_increases = calculate_annual_increase(zillow_long)
+    print(f"Mean projected annual rent increase: {np.mean(annual_increases):.1f}%")
 
 if __name__ == "__main__":
     main()
