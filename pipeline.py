@@ -154,33 +154,61 @@ def export_to_sql(df, db_type="sqlite", db_name="housing_affordability.db"):
     print(f"✅ Exported to {db_type} database: {db_name}")
 
 # --- Regression Forecasting ---
+def prepare_zillow_timeseries(zillow_path):
+    """
+    Convert wide Zillow rent dataset to long format:
+    ZIP | date | rent
+    """
+    df = pd.read_csv(zillow_path)
+
+    id_vars = ["ZIP", "State", "City", "Metro", "CountyName"]
+    value_vars = df.columns[len(id_vars):]  # all date columns
+
+    long_df = df.melt(id_vars=id_vars, value_vars=value_vars,
+                      var_name="date", value_name="rent")
+
+    # Convert to datetime
+    long_df["date"] = pd.to_datetime(long_df["date"], format="%d/%m/%Y")
+    long_df["year"] = long_df["date"].dt.year
+    long_df["month"] = long_df["date"].dt.month
+
+    return long_df
 def run_forecast(df, years=5):
     """
     Simple linear regression forecast of rents for each ZIP code.
     """
-
     forecasts = []
     for zip_code, group in df.groupby("ZIP"):
-        group = group.dropna(subset=["MedianRent"])
-        if group.shape[0] < 3:  # need at least 3 years of data
+        group = group.dropna(subset=["rent"]).sort_values("date")
+        if group.shape[0] < 24:  # require at least 2 years of data
             continue
 
-        X = group["year"].values.reshape(-1, 1)
-        y = group["MedianRent"].values
+        # Use time index (months since start) as predictor
+        group["t"] = np.arange(len(group))
+        X = group[["t"]]
+        y = group["rent"].values
 
         model = LinearRegression()
         model.fit(X, y)
 
         # Predict future rents
-        future_years = np.arange(group["year"].max() + 1, group["year"].max() + 1 + years).reshape(-1, 1)
-        future_preds = model.predict(future_years)
+        future_t = np.arange(len(group), len(group) + years * 12).reshape(-1, 1)
+        future_dates = pd.date_range(start=group["date"].max() + pd.offsets.MonthBegin(),
+                                     periods=years * 12, freq="MS")
+        preds = model.predict(future_t)
 
-        for yr, pred in zip(future_years.flatten(), future_preds):
-            forecasts.append({"ZIP": zip_code, "year": yr, "forecast_rent": pred})
+        for dt, pred in zip(future_dates, preds):
+            forecasts.append({
+                "ZIP": zip_code,
+                "date": dt,
+                "forecast_rent": pred
+            })
 
     forecast_df = pd.DataFrame(forecasts)
     forecast_df.to_csv(os.path.join(OUT_DIR, "rent_forecast.csv"), index=False)
     print("✅ Forecasting complete! Results saved to data_out/rent_forecast.csv")
+
+    return forecast_df
 
 # --- Main pipeline ---
 def main():
@@ -205,3 +233,6 @@ def main():
 
 if __name__ == "__main__":
     main()
+    zillow_path = os.path.join("raw_data", "zillow_rent.csv")
+    long_df = prepare_zillow_timeseries(zillow_path)
+    forecast_df = run_forecast(long_df, years=5)
