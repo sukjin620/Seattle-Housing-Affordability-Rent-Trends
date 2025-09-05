@@ -149,11 +149,12 @@ def export_to_sql(df, db_name="housing_affordability.db"):
     if df.empty:
         print(f"⚠️ DataFrame is empty. Skipping export to SQLite database.")
         return
-
-    # Connect to SQLite (creates file if it doesn't exist)
+    
+    for col in df.select_dtypes(include=["object"]).columns:
+        df[col] = df[col].astype(str)
+    
     conn = sqlite3.connect(db_name)
 
-    # Write DataFrame to table "housing_data", overwrite if exists
     df.to_sql("housing_data", conn, if_exists="replace", index=False)
 
     conn.close()
@@ -206,11 +207,18 @@ def run_forecast(df, years=5):
         model.fit(X, y)
 
         # Predict future rents
-        future_t = np.arange(len(group), len(group) + years * 12).reshape(-1, 1)
-        future_dates = pd.date_range(start=group["date"].max() + pd.offsets.MonthBegin(),
-                                     periods=years * 12, freq="MS")
+        future_t = pd.DataFrame(
+            np.arange(len(group), len(group) + years * 12),
+            columns=["t"]
+        )
+        future_dates = pd.date_range(
+            start=group["date"].max() + pd.offsets.MonthBegin(),
+            periods=years * 12,
+            freq="MS"
+        )
         preds = model.predict(future_t)
 
+        # Append forecast results
         for dt, pred in zip(future_dates, preds):
             forecasts.append({
                 "ZIP": zip_code,
