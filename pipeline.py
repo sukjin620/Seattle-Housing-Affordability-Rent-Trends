@@ -15,8 +15,8 @@ Usage:
 import os
 import pandas as pd
 import geopandas as gpd
-from sqlalchemy import create_engine
 from sklearn.linear_model import LinearRegression
+import sqlite3
 import numpy as np
 
 # --- Folder setup ---
@@ -141,17 +141,23 @@ def save_outputs(df):
     df.to_csv(out_file, index=False)
 
 # --- Export to SQL ---
-def export_to_sql(df, db_type="sqlite", db_name="housing_affordability.db"):
-    if db_type == "sqlite":
-        engine = create_engine(f"sqlite:///{db_name}")
-    elif db_type == "postgres":
-        # Replace with your credentials
-        engine = create_engine("postgresql://user:password@localhost:5432/housing")
-    else:
-        raise ValueError("db_type must be 'sqlite' or 'postgres'")
+def export_to_sql(df, db_name="housing_affordability.db"):
+    """
+    Export a DataFrame to a SQLite database.
+    Skips export if DataFrame is empty to avoid creating empty DBs.
+    """
+    if df.empty:
+        print(f"⚠️ DataFrame is empty. Skipping export to SQLite database.")
+        return
 
-    df.to_sql("housing_data", engine, if_exists="replace", index=False)
-    print(f"✅ Exported to {db_type} database: {db_name}")
+    # Connect to SQLite (creates file if it doesn't exist)
+    conn = sqlite3.connect(db_name)
+
+    # Write DataFrame to table "housing_data", overwrite if exists
+    df.to_sql("housing_data", conn, if_exists="replace", index=False)
+
+    conn.close()
+    print(f"✅ Exported DataFrame to SQLite database: {db_name}")
 
 # --- Regression Forecasting ---
 def prepare_zillow_timeseries(zillow_df, min_months=12):
@@ -232,7 +238,7 @@ def main():
     save_outputs(merged)
 
     print("Exporting to SQL...")
-    export_to_sql(merged, db_type="sqlite") 
+    export_to_sql(merged, db_name="housing_affordability.db") 
 
     print("Running regression forecasting...")
     zillow_long = prepare_zillow_timeseries(zillow)
