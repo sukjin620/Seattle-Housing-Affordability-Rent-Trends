@@ -6,7 +6,7 @@
   - File: Rent Index by ZIP Code → filter for Seattle ZIP codes
  
 - **American Community Survey (ACS) 5-Year Estimates**  
-  - Source: [U.S. Census Bureau API](https://api.census.gov/data.html) or [IPUMS NHGIS](https://www.nhgis.org/)  
+  - Source: [U.S. Census Bureau API](https://api.census.gov/data.html)
   - Tables used:
     - Income
     - Rent_burden
