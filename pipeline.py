@@ -5,6 +5,8 @@ This script automates the ETL (Extract → Transform → Load) process:
 1. Reads raw datasets from `raw_data/`
 2. Cleans and merges them into analysis-ready tables
 3. Saves outputs to `data_work/` (intermediate) and `data_out/` (final for Tableau/SQL)
+4. Exports to SQLite (or Postgres if configured)
+5. Runs regression forecasting to project rent trends
 
 Usage:
     python pipeline.py
@@ -13,7 +15,9 @@ Usage:
 import os
 import pandas as pd
 import geopandas as gpd
-from census import Census
+from sqlalchemy import create_engine
+from sklearn.linear_model import LinearRegression
+import numpy as np
 
 # --- Folder setup ---
 RAW_DIR = "raw_data"
@@ -136,6 +140,48 @@ def save_outputs(df):
     df.to_csv(work_file, index=False)
     df.to_csv(out_file, index=False)
 
+# --- Export to SQL ---
+def export_to_sql(df, db_type="sqlite", db_name="housing_affordability.db"):
+    if db_type == "sqlite":
+        engine = create_engine(f"sqlite:///{db_name}")
+    elif db_type == "postgres":
+        # Replace with your credentials
+        engine = create_engine("postgresql://user:password@localhost:5432/housing")
+    else:
+        raise ValueError("db_type must be 'sqlite' or 'postgres'")
+
+    df.to_sql("housing_data", engine, if_exists="replace", index=False)
+    print(f"✅ Exported to {db_type} database: {db_name}")
+
+# --- Regression Forecasting ---
+def run_forecast(df, years=5):
+    """
+    Simple linear regression forecast of rents for each ZIP code.
+    """
+
+    forecasts = []
+    for zip_code, group in df.groupby("ZIP"):
+        group = group.dropna(subset=["MedianRent"])
+        if group.shape[0] < 3:  # need at least 3 years of data
+            continue
+
+        X = group["year"].values.reshape(-1, 1)
+        y = group["MedianRent"].values
+
+        model = LinearRegression()
+        model.fit(X, y)
+
+        # Predict future rents
+        future_years = np.arange(group["year"].max() + 1, group["year"].max() + 1 + years).reshape(-1, 1)
+        future_preds = model.predict(future_years)
+
+        for yr, pred in zip(future_years.flatten(), future_preds):
+            forecasts.append({"ZIP": zip_code, "year": yr, "forecast_rent": pred})
+
+    forecast_df = pd.DataFrame(forecasts)
+    forecast_df.to_csv(os.path.join(OUT_DIR, "rent_forecast.csv"), index=False)
+    print("✅ Forecasting complete! Results saved to data_out/rent_forecast.csv")
+
 # --- Main pipeline ---
 def main():
     print("Loading raw datasets...")
@@ -149,7 +195,13 @@ def main():
     print("Saving outputs...")
     save_outputs(merged)
 
-    print("✅ Pipeline complete! Cleaned data available in data_out/")
+    print("Exporting to SQL...")
+    export_to_sql(merged, db_type="sqlite")  # or db_type="postgres"
+
+    print("Running regression forecasting...")
+    run_forecast(zillow)
+
+    print("🎉 Pipeline complete!")
 
 if __name__ == "__main__":
     main()
